@@ -1,0 +1,19 @@
+# Java compiled files
+*.class
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# macOS files
+.DS_Store
+
+# Logs
+*.log
+
+# Generated reports
+reports/*.txt
+
+# Data files
+data/*.txt
