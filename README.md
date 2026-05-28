@@ -45,7 +45,7 @@ This system is designed as a learning project to show how different classes work
 ## Project Structure
 
 ```text
-DriveFlowPrototype/
+DriveFlow/
 ├── src/
 │   ├── Main.java
 │   ├── CarRentalApp.java
@@ -145,7 +145,7 @@ The GUI interacts with the system through high-level methods such as `addCar()`,
 Example using terminal:
 
 ```bash
-cd DriveFlowPrototype
+cd DriveFlow
 javac src/*.java
 java -cp src Main
 ```
