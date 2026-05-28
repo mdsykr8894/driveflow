@@ -541,9 +541,6 @@ public class CarRentalApp extends JFrame {
         container.setBackground(Color.WHITE);
         container.setBorder(BorderFactory.createLineBorder(BORDER));
 
-        // =========================
-        // SEARCH AND ACTION BAR
-        // =========================
         JPanel toolbar = new JPanel(new BorderLayout());
         toolbar.setBackground(Color.WHITE);
         toolbar.setBorder(new EmptyBorder(16, 16, 16, 16));
