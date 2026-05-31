@@ -5,14 +5,22 @@ public class Rental {
     private int days;
     private double totalPrice;
     private String status;
+    private String rentalStartDate;
+    private String expectedReturnDate;
 
-    public Rental(String rentalId, Car car, Customer customer, int days) {
+    public Rental(String rentalId, Car car, Customer customer, int days, String rentalStartDate, String expectedReturnDate) {
         this.rentalId = rentalId;
         this.car = car;
         this.customer = customer;
         this.days = days;
+        this.rentalStartDate = rentalStartDate;
+        this.expectedReturnDate = expectedReturnDate;
         this.status = "ACTIVE";
         calculatePrice();
+    }
+
+    public Rental(String rentalId, Car car, Customer customer, int days) {
+        this(rentalId, car, customer, days, "-", "-");
     }
 
     public String getRentalId() {
@@ -82,12 +90,20 @@ public class Rental {
         }
     }
 
+    public String getRentalStartDate() {
+        return rentalStartDate;
+    }
+
+    public String getExpectedReturnDate() {
+        return expectedReturnDate;
+    }
+
     public String getRentalDetails() {
         return rentalId + " - " + car.getBrand() + " " + car.getModel() + " rented by " + customer.getName();
     }
 
     public String toDataString() {
         return rentalId + "|" + car.getCarId() + "|" + customer.getCustomerId() + "|" + days + "|" + totalPrice + "|"
-                + status;
+                + status + "|" + rentalStartDate + "|" + expectedReturnDate;
     }
 }

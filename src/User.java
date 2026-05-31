@@ -2,11 +2,13 @@ public abstract class User {
     private String username;
     private String password;
     private String role;
+    private String status;
 
-    public User(String username, String password, String role) {
+    public User(String username, String password, String role, String status) {
         this.username = username;
         this.password = password;
         this.role = role;
+        this.status = status;
     }
 
     public String getUsername() {
@@ -33,6 +35,14 @@ public abstract class User {
         this.role = role;
     }
 
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     public boolean validateLogin(String inputUsername, String inputPassword) {
         return username.equals(inputUsername) && password.equals(inputPassword);
     }
@@ -44,6 +54,6 @@ public abstract class User {
     public abstract String getDashboardTitle();
 
     public String toDataString() {
-        return username + "|" + password + "|" + role;
+        return username + "|" + password + "|" + role + "|" + status;
     }
 }

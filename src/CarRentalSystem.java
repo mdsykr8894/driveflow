@@ -25,10 +25,22 @@ public class CarRentalSystem {
     public User login(String username, String password) {
         for (User user : userList) {
             if (user.validateLogin(username, password)) {
+                if ("DEACTIVATED".equalsIgnoreCase(user.getStatus())) {
+                    return null;
+                }
                 return user;
             }
         }
         return null;
+    }
+
+    public boolean isUserDeactivated(String username, String password) {
+        for (User user : userList) {
+            if (user.validateLogin(username, password)) {
+                return "DEACTIVATED".equalsIgnoreCase(user.getStatus());
+            }
+        }
+        return false;
     }
 
     public ArrayList<User> getAllUsers() {
@@ -72,6 +84,29 @@ public class CarRentalSystem {
         userList.add(new Staff(username.trim(), password.trim()));
         saveUsers();
         return true;
+    }
+
+    public boolean toggleUserStatus(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            return false;
+        }
+
+        if ("admin".equalsIgnoreCase(username.trim())) {
+            return false;
+        }
+
+        for (User user : userList) {
+            if (user.getUsername().equalsIgnoreCase(username.trim())) {
+                if ("ACTIVE".equalsIgnoreCase(user.getStatus())) {
+                    user.setStatus("DEACTIVATED");
+                } else {
+                    user.setStatus("ACTIVE");
+                }
+                saveUsers();
+                return true;
+            }
+        }
+        return false;
     }
 
     private void createDefaultAdminIfNeeded() {
@@ -206,11 +241,21 @@ public class CarRentalSystem {
         return null;
     }
 
-    public Rental rentCar(String carId, String customerName, String customerPhone, int days) {
+    public Rental rentCar(String carId, String customerName, String customerPhone, int days, String rentalStartDate) {
         Car car = findCarById(carId);
 
         if (car == null || !car.isAvailable() || days <= 0) {
             return null;
+        }
+
+        // Calculate expectedReturnDate
+        String expectedReturnDate = "-";
+        try {
+            java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy");
+            java.time.LocalDate start = java.time.LocalDate.parse(rentalStartDate, dtf);
+            expectedReturnDate = start.plusDays(days).format(dtf);
+        } catch (Exception e) {
+            // Fallback
         }
 
         String customerId = generateCustomerId();
@@ -218,7 +263,7 @@ public class CarRentalSystem {
         customerList.add(customer);
 
         String rentalId = generateRentalId();
-        Rental rental = new Rental(rentalId, car, customer, days);
+        Rental rental = new Rental(rentalId, car, customer, days, rentalStartDate, expectedReturnDate);
         rental.confirmRental();
         rentalList.add(rental);
 
@@ -227,6 +272,11 @@ public class CarRentalSystem {
         saveCars();
 
         return rental;
+    }
+
+    public Rental rentCar(String carId, String customerName, String customerPhone, int days) {
+        java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy");
+        return rentCar(carId, customerName, customerPhone, days, java.time.LocalDate.now().format(dtf));
     }
 
     public boolean returnCar(String rentalId) {
@@ -391,15 +441,20 @@ public class CarRentalSystem {
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split("\\|");
 
-                if (parts.length == 3) {
+                if (parts.length >= 3) {
                     String username = parts[0];
                     String password = parts[1];
                     String role = parts[2];
+                    String status = "ACTIVE"; // Default status for legacy formats
+
+                    if (parts.length == 4) {
+                        status = parts[3];
+                    }
 
                     if ("Admin".equalsIgnoreCase(role)) {
-                        userList.add(new Admin(username, password));
+                        userList.add(new Admin(username, password, status));
                     } else if ("Staff".equalsIgnoreCase(role)) {
-                        userList.add(new Staff(username, password));
+                        userList.add(new Staff(username, password, status));
                     }
                 }
             }
@@ -497,19 +552,21 @@ public class CarRentalSystem {
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split("\\|");
 
-                if (parts.length == 6) {
+                if (parts.length == 6 || parts.length == 8) {
                     try {
                         String rentalId = parts[0];
                         String carId = parts[1];
                         String customerId = parts[2];
                         int days = Integer.parseInt(parts[3]);
                         String status = parts[5];
+                        String rentalStartDate = (parts.length == 8) ? parts[6] : "-";
+                        String expectedReturnDate = (parts.length == 8) ? parts[7] : "-";
 
                         Car car = findCarById(carId);
                         Customer customer = findCustomerById(customerId);
 
                         if (car != null && customer != null) {
-                            Rental rental = new Rental(rentalId, car, customer, days);
+                            Rental rental = new Rental(rentalId, car, customer, days, rentalStartDate, expectedReturnDate);
                             rental.setStatus(status);
                             rental.calculatePrice();
                             rentalList.add(rental);
@@ -534,6 +591,26 @@ public class CarRentalSystem {
         }
     }
 
+    public ArrayList<Customer> getAllCustomers() {
+        return new ArrayList<>(customerList);
+    }
+
+    public ArrayList<Customer> searchCustomers(String query) {
+        ArrayList<Customer> results = new ArrayList<>();
+        if (query == null || query.trim().isEmpty()) {
+            return getAllCustomers();
+        }
+        String lowerQuery = query.toLowerCase().trim();
+        for (Customer customer : customerList) {
+            if (customer.getName().toLowerCase().contains(lowerQuery)
+                    || customer.getPhone().toLowerCase().contains(lowerQuery)
+                    || customer.getCustomerId().toLowerCase().contains(lowerQuery)) {
+                results.add(customer);
+            }
+        }
+        return results;
+    }
+
     private Customer findCustomerById(String customerId) {
         for (Customer customer : customerList) {
             if (customer.getCustomerId().equalsIgnoreCase(customerId)) {
@@ -546,26 +623,42 @@ public class CarRentalSystem {
     public boolean exportInventoryReport() {
         new File(REPORT_FOLDER).mkdirs();
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(REPORT_FOLDER + "/car_inventory_report.txt"))) {
-            writer.write("========================================================================================\n");
-            writer.write("                           CAR RENTAL MANAGEMENT REPORT                                 \n");
-            writer.write("========================================================================================\n");
+        int activeRentals = 0;
+        int returnedRentals = 0;
+        for (Rental rental : rentalList) {
+            if ("ACTIVE".equalsIgnoreCase(rental.getStatus())) {
+                activeRentals++;
+            } else if ("RETURNED".equalsIgnoreCase(rental.getStatus())) {
+                returnedRentals++;
+            }
+        }
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(REPORT_FOLDER + "/driveflow_report.txt"))) {
+            writer.write("====================================================================================================================================\n");
+            writer.write("                                                   DRIVEFLOW MANAGEMENT REPORT                                                      \n");
+            writer.write("====================================================================================================================================\n");
             writer.write("Generated on: " + new Date() + "\n\n");
 
-            writer.write("Total Cars      : " + getTotalCars() + "\n");
-            writer.write("Available Cars  : " + getAvailableCarCount() + "\n");
-            writer.write("Rented Cars     : " + getRentedCarCount() + "\n");
-            writer.write("Total Rentals   : " + getTotalRentalCount() + "\n\n");
+            writer.write("SUMMARY INFORMATION\n");
+            writer.write("------------------------------------------------------------------------------------------------------------------------------------\n");
+            writer.write(String.format("%-25s: %-10d\n", "Total Cars", carList.size()));
+            writer.write(String.format("%-25s: %-10d\n", "Available Cars", getAvailableCarCount()));
+            writer.write(String.format("%-25s: %-10d\n", "Rented Cars", getRentedCarCount()));
+            writer.write(String.format("%-25s: %-10d\n", "Total Rentals", rentalList.size()));
+            writer.write(String.format("%-25s: %-10d\n", "Active Rentals", activeRentals));
+            writer.write(String.format("%-25s: %-10d\n", "Returned Rentals", returnedRentals));
+            writer.write("\n");
 
-            writer.write("----------------------------------------------------------------------------------------\n");
+            writer.write("CAR INVENTORY SECTION\n");
+            writer.write("------------------------------------------------------------------------------------------------------------------------------------\n");
             writer.write(String.format(
-                    "%-10s | %-12s | %-12s | %-6s | %-10s | %-10s | %-10s\n",
+                    "%-10s | %-15s | %-15s | %-6s | %-12s | %-12s | %-12s\n",
                     "CAR ID", "BRAND", "MODEL", "YEAR", "TYPE", "PRICE/DAY", "STATUS"));
-            writer.write("----------------------------------------------------------------------------------------\n");
+            writer.write("------------------------------------------------------------------------------------------------------------------------------------\n");
 
             for (Car car : carList) {
                 writer.write(String.format(
-                        "%-10s | %-12s | %-12s | %-6d | %-10s | RM%8.2f | %-10s\n",
+                        "%-10s | %-15s | %-15s | %-6d | %-12s | RM%10.2f | %-12s\n",
                         car.getCarId(),
                         car.getBrand(),
                         car.getModel(),
@@ -574,8 +667,34 @@ public class CarRentalSystem {
                         car.getPricePerDay(),
                         car.getStatus()));
             }
+            writer.write("\n");
 
-            writer.write("========================================================================================\n");
+            writer.write("RENTAL RECORDS SECTION\n");
+            writer.write("------------------------------------------------------------------------------------------------------------------------------------\n");
+            writer.write(String.format(
+                    "%-10s | %-10s | %-20s | %-12s | %-12s | %-15s | %-4s | %-12s | %-10s\n",
+                    "RENTAL ID", "CAR ID", "CUSTOMER", "PHONE", "START DATE", "EXPECTED RETURN", "DAYS", "TOTAL PRICE", "STATUS"));
+            writer.write("------------------------------------------------------------------------------------------------------------------------------------\n");
+
+            for (int i = rentalList.size() - 1; i >= 0; i--) {
+                Rental rental = rentalList.get(i);
+                String startDate = (rental.getRentalStartDate() == null || rental.getRentalStartDate().trim().isEmpty()) ? "-" : rental.getRentalStartDate();
+                String returnDate = (rental.getExpectedReturnDate() == null || rental.getExpectedReturnDate().trim().isEmpty()) ? "-" : rental.getExpectedReturnDate();
+                
+                writer.write(String.format(
+                        "%-10s | %-10s | %-20s | %-12s | %-12s | %-15s | %-4d | RM%10.2f | %-10s\n",
+                        rental.getRentalId(),
+                        rental.getCar().getCarId(),
+                        rental.getCustomer().getName(),
+                        rental.getCustomer().getPhone(),
+                        startDate,
+                        returnDate,
+                        rental.getDays(),
+                        rental.getTotalPrice(),
+                        rental.getStatus()));
+            }
+
+            writer.write("====================================================================================================================================\n");
 
             return true;
         } catch (IOException e) {
